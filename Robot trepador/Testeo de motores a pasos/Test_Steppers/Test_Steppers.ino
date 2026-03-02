@@ -7,9 +7,9 @@
 
 #include <AccelStepper.h>
 
-// Definimos STEP en PA0 y DIR en PA1
-#define STEP_PIN PA0
-#define DIR_PIN  PA1
+// Definimos STEP en D2 y DIR en D4
+#define STEP_PIN 2
+#define DIR_PIN  4
 
 AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 
