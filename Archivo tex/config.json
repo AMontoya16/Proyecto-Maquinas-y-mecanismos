@@ -1,0 +1,42 @@
+{
+    "python.defaultInterpreterPath": "/sbin/python3.14",
+    "gitlens.ai.model": "vscode",
+    "gitlens.ai.vscode.model": "copilot:gpt-4.1",
+    "[csv]": {
+        "editor.inlayHints.maximumLength": 0
+    },
+    "explorer.confirmDragAndDrop": false,
+    "explorer.confirmDelete": false,
+    "git.autofetch": true,
+    "editor.largeFileOptimizations": false,
+    "claudeCode.preferredLocation": "panel",
+    "workbench.colorCustomizations": {},
+
+    "latex-workshop.latex.recipes": [
+        {
+            "name": "latexmk (pdflatex) + bibtex",
+            "tools": ["latexmk"]
+        }
+    ],
+    "latex-workshop.latex.tools": [
+        {
+            "name": "latexmk",
+            "command": "latexmk",
+            "args": [
+                "-synctex=1",
+                "-interaction=nonstopmode",
+                "-file-line-error",
+                "-pdf",
+                "-outdir=%OUTDIR%",
+                "%DOC%"
+            ]
+        }
+    ],
+    "latex-workshop.view.pdf.viewer": "tab",
+    "latex-workshop.latex.autoBuild.run": "onSave",
+    "latex-workshop.latex.clean.fileTypes": [
+        "*.aux","*.bbl","*.blg","*.log","*.out",
+        "*.toc","*.synctex.gz","*.fls","*.fdb_latexmk"
+    ],
+    "latex-workshop.latex.autoClean.run": "onSucceeded"
+}
