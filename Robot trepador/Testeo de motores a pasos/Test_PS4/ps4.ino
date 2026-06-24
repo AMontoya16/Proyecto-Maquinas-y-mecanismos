@@ -33,16 +33,16 @@
 #define PIN_ENABLE  19
 
 // ── Parámetros del stepper ───────────────────────────────────
-#define MIN_STEP_US      200   // período mínimo (máx velocidad) — subilo si el motor pierde pasos
-#define MAX_STEP_US     1800   // período máximo (mín velocidad) — más cerca del MIN = rango más útil
-#define TRIGGER_DEADZONE  5    // zona muerta más pequeña = arranca antes
-#define ACCEL_STEP_US    10    // rampa más suave
+#define MIN_STEP_US      200
+#define MAX_STEP_US     1800
+#define TRIGGER_DEADZONE  40
+#define ACCEL_STEP_US    10
 
 // ── Variables globales ───────────────────────────────────────
 GamepadPtr connectedGamepad = nullptr;
 
 volatile bool  motorEnabled  = false;
-volatile bool  motorDir      = true;   // true = adelante, false = atrás
+volatile bool  motorDir      = true;
 volatile long  targetPeriodUs = MAX_STEP_US;
 volatile long  currentPeriodUs = MAX_STEP_US;
 
@@ -66,55 +66,46 @@ void onDisconnectedGamepad(GamepadPtr gp) {
 
     // Detener motor de forma segura
     motorEnabled  = false;
-    digitalWrite(PIN_ENABLE, HIGH);  // deshabilitar driver
+    digitalWrite(PIN_ENABLE, HIGH);
 }
 
 // ── Mapeo de trigger a período (curva cuadrática) ────────────
-/**
- * Curva cuadrática: da más resolución a velocidades bajas.
- * trigger: 0-255
- * retorna: período en µs (MAX cuando trigger=0, MIN cuando trigger=255)
- */
 long triggerToPeriod(int triggerVal) {
     if (triggerVal < TRIGGER_DEADZONE) return MAX_STEP_US;
 
     // Normalizar 0.0 - 1.0
-    float t = (float)(triggerVal - TRIGGER_DEADZONE) / (255.0f - TRIGGER_DEADZONE);
+    float t = (float)(triggerVal - TRIGGER_DEADZONE) / (1023.0f - TRIGGER_DEADZONE);
+    t = constrain(t, 0.0f, 1.0f);
 
     // Curva sqrt: sube rápido al inicio, más sensible en zona baja del trigger
     t = sqrtf(t);
 
-    // Interpolar período (inverso: mayor t = menor período = más rápido)
+    // Interpolar período
     long period = (long)(MAX_STEP_US - t * (MAX_STEP_US - MIN_STEP_US));
     return constrain(period, MIN_STEP_US, MAX_STEP_US);
 }
 
 // ── Tarea del stepper (Core 0) ───────────────────────────────
-/**
- * Corre en Core 0 para no interferir con el stack BT (Core 1).
- * Genera pulsos STEP con el período calculado.
- * Implementa rampa de aceleración suave.
- */
 void stepperTask(void* param) {
-    digitalWrite(PIN_ENABLE, HIGH);  // empieza deshabilitado
+    digitalWrite(PIN_ENABLE, HIGH);
     digitalWrite(PIN_STEP, LOW);
+
+    int stepCounter = 0;
 
     while (true) {
         if (!motorEnabled) {
             digitalWrite(PIN_ENABLE, HIGH);
-            currentPeriodUs = MAX_STEP_US;  // reset período para próximo arranque
+            digitalWrite(PIN_STEP, LOW);
+            currentPeriodUs = MAX_STEP_US;
             vTaskDelay(10 / portTICK_PERIOD_MS);
             continue;
         }
 
-        // Habilitar driver
         digitalWrite(PIN_ENABLE, LOW);
 
-        // Dirección
         digitalWrite(PIN_DIR, motorDir ? HIGH : LOW);
-        delayMicroseconds(5);  // setup time TMC2209
+        delayMicroseconds(5);
 
-        // Rampa de aceleración/desaceleración suave
         if (currentPeriodUs > targetPeriodUs) {
             currentPeriodUs -= ACCEL_STEP_US;
             if (currentPeriodUs < targetPeriodUs) currentPeriodUs = targetPeriodUs;
@@ -123,14 +114,19 @@ void stepperTask(void* param) {
             if (currentPeriodUs > targetPeriodUs) currentPeriodUs = targetPeriodUs;
         }
 
-        // Pulso STEP (mínimo 1µs HIGH según datasheet TMC2209)
         digitalWrite(PIN_STEP, HIGH);
         delayMicroseconds(2);
         digitalWrite(PIN_STEP, LOW);
 
-        // Esperar el resto del período
         long waitUs = currentPeriodUs - 2;
         if (waitUs > 0) delayMicroseconds(waitUs);
+
+        stepCounter++;
+
+        if (stepCounter >= 50) {
+            stepCounter = 0;
+            vTaskDelay(1);
+        }
     }
 }
 
@@ -139,26 +135,23 @@ void setup() {
     Serial.begin(115200);
     Serial.println("=== ESP32 + PS4 + TMC2209 ===");
 
-    // Pines del stepper
     pinMode(PIN_STEP,   OUTPUT);
     pinMode(PIN_DIR,    OUTPUT);
     pinMode(PIN_ENABLE, OUTPUT);
-    digitalWrite(PIN_ENABLE, HIGH);  // deshabilitado al inicio
+    digitalWrite(PIN_ENABLE, HIGH);
 
-    // Bluepad32
     BP32.setup(&onConnectedGamepad, &onDisconnectedGamepad);
-    BP32.forgetBluetoothKeys();  // comentar esta línea si quieres pairing persistente
+    BP32.forgetBluetoothKeys();
     Serial.println("Esperando conexión PS4... (mantén PS + Share)");
 
-    // Lanzar tarea del stepper en Core 0
     xTaskCreatePinnedToCore(
-        stepperTask,        // función
-        "StepperTask",      // nombre
-        2048,               // stack
-        nullptr,            // parámetros
-        1,                  // prioridad
-        &stepperTaskHandle, // handle
-        0                   // Core 0
+        stepperTask,
+        "StepperTask",
+        2048,
+        nullptr,
+        1,
+        &stepperTaskHandle,
+        0
     );
 }
 
@@ -173,32 +166,27 @@ void loop() {
 
     GamepadPtr gp = connectedGamepad;
 
-    // Leer triggers (0 - 255)
-    int r2 = gp->throttle();  // R2 → adelante
-    int l2 = gp->brake();     // L2 → atrás
+    int r2 = gp->throttle();
+    int l2 = gp->brake();
 
     bool r2Active = (r2 > TRIGGER_DEADZONE);
     bool l2Active = (l2 > TRIGGER_DEADZONE);
 
     if (!r2Active && !l2Active) {
-        // Sin input → detener
         motorEnabled = false;
         targetPeriodUs = MAX_STEP_US;
 
     } else if (r2Active && !l2Active) {
-        // Solo R2 → adelante
         motorDir      = true;
         targetPeriodUs = triggerToPeriod(r2);
         motorEnabled  = true;
 
     } else if (l2Active && !r2Active) {
-        // Solo L2 → atrás
         motorDir      = false;
         targetPeriodUs = triggerToPeriod(l2);
         motorEnabled  = true;
 
     } else {
-        // Ambos activos → el mayor gana
         if (r2 >= l2) {
             motorDir      = true;
             targetPeriodUs = triggerToPeriod(r2);
@@ -209,7 +197,6 @@ void loop() {
         motorEnabled = true;
     }
 
-    // Debug por Serial (cada 200ms para no saturar)
     static unsigned long lastPrint = 0;
     if (millis() - lastPrint > 200) {
         lastPrint = millis();
@@ -221,5 +208,5 @@ void loop() {
         );
     }
 
-    delay(10);  // ~100Hz de lectura del gamepad
+    delay(10);
 }
