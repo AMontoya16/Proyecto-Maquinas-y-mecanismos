@@ -8,8 +8,8 @@
 #include <AccelStepper.h>
 
 // Definimos STEP en D2 y DIR en D4
-#define STEP_PIN 2
-#define DIR_PIN  4
+#define STEP_PIN 18
+#define DIR_PIN  19
 
 AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 
@@ -17,7 +17,7 @@ const int STEPS_PER_REV = 200;
 
 void setup() {
   stepper.setMaxSpeed(700);
-  stepper.setAcceleration(1100);
+  stepper.setAcceleration(500);
   stepper.setCurrentPosition(0);
 }
 
